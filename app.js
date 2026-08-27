@@ -1195,9 +1195,8 @@ function hideApp() {
   document.getElementById('user-email').textContent = '';
 }
 
-// Email + 6-digit code, entered entirely on this screen — no link to tap.
-// (A tapped email link always opens Safari on iOS, never a home-screen web app,
-// so a clickable magic link breaks the "open the shortcut, land in the app" flow.)
+// Email + password. No email step at all, so nothing to tap out of the app,
+// and Supabase persists the session locally — no repeated logins once signed in.
 function renderAuthScreen(status) {
   hideApp();
   const c = document.getElementById('content');
@@ -1205,39 +1204,39 @@ function renderAuthScreen(status) {
     <div class="auth-wrap">
       <div class="card auth-card">
         <div class="section-title">Entrar</div>
-        <p class="section-sub">Digite seu e-mail para receber um código de 6 dígitos.</p>
+        <p class="section-sub" id="auth-mode-hint">Digite seu e-mail e senha.</p>
         <div class="field"><label>E-mail</label><input class="input" id="auth-email" type="email" placeholder="voce@email.com" autocomplete="email"></div>
-        <button class="btn btn-primary" id="auth-send" style="width:100%">Enviar código</button>
-        <div id="auth-code-block" style="display:none; margin-top:16px">
-          <div class="field"><label>Código recebido por e-mail</label><input class="input" id="auth-code" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="000000" autocomplete="one-time-code"></div>
-          <button class="btn btn-primary" id="auth-verify" style="width:100%">Confirmar</button>
-        </div>
+        <div class="field"><label>Senha</label><input class="input" id="auth-password" type="password" placeholder="••••••••" autocomplete="current-password"></div>
+        <button class="btn btn-primary" id="auth-signin" style="width:100%">Entrar</button>
+        <button class="btn" id="auth-signup" style="width:100%; margin-top:8px">Criar conta (primeiro acesso)</button>
         <div class="hint" id="auth-status" style="margin-top:10px">${status ? escapeHtml(status) : ''}</div>
       </div>
     </div>`;
 
   const statusEl = document.getElementById('auth-status');
-  const codeBlock = document.getElementById('auth-code-block');
+  const getCreds = () => ({
+    email: document.getElementById('auth-email').value.trim(),
+    password: document.getElementById('auth-password').value,
+  });
 
-  document.getElementById('auth-send').onclick = async () => {
-    const email = document.getElementById('auth-email').value.trim();
-    if (!email) { statusEl.textContent = 'Informe um e-mail.'; return; }
-    statusEl.textContent = 'Enviando...';
-    const { error } = await sb.auth.signInWithOtp({ email, options: { shouldCreateUser: true } });
-    if (error) { statusEl.textContent = 'Erro: ' + error.message; return; }
-    statusEl.textContent = 'Código enviado! Confira seu e-mail e digite abaixo.';
-    codeBlock.style.display = '';
-    document.getElementById('auth-code').focus();
-  };
-
-  document.getElementById('auth-verify').onclick = async () => {
-    const email = document.getElementById('auth-email').value.trim();
-    const token = document.getElementById('auth-code').value.trim();
-    if (!token) { statusEl.textContent = 'Digite o código recebido.'; return; }
-    statusEl.textContent = 'Verificando...';
-    const { error } = await sb.auth.verifyOtp({ email, token, type: 'email' });
+  document.getElementById('auth-signin').onclick = async () => {
+    const { email, password } = getCreds();
+    if (!email || !password) { statusEl.textContent = 'Preencha e-mail e senha.'; return; }
+    statusEl.textContent = 'Entrando...';
+    const { error } = await sb.auth.signInWithPassword({ email, password });
     if (error) statusEl.textContent = 'Erro: ' + error.message;
     // on success, onAuthStateChange fires SIGNED_IN and boots the app — nothing else to do here.
+  };
+
+  document.getElementById('auth-signup').onclick = async () => {
+    const { email, password } = getCreds();
+    if (!email || !password) { statusEl.textContent = 'Preencha e-mail e senha.'; return; }
+    if (password.length < 6) { statusEl.textContent = 'A senha precisa ter pelo menos 6 caracteres.'; return; }
+    statusEl.textContent = 'Criando conta...';
+    const { data, error } = await sb.auth.signUp({ email, password });
+    if (error) { statusEl.textContent = 'Erro: ' + error.message; return; }
+    if (data.session) return; // confirmations disabled: onAuthStateChange signs us in immediately
+    statusEl.textContent = 'Conta criada! Se pedir confirmação por e-mail, desative "Confirm email" em Authentication → Providers → Email no Supabase, e tente Entrar novamente.';
   };
 }
 

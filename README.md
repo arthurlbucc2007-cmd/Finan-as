@@ -10,18 +10,18 @@ Por padrão, os dados ficam salvos só no navegador (localStorage), no seu compu
 
 ## Sincronizar com Supabase (opcional)
 
-Sem configurar nada, o app funciona 100% local. Para sincronizar seus dados entre celular/computador com login por e-mail, conecte um projeto Supabase:
+Sem configurar nada, o app funciona 100% local. Para sincronizar seus dados entre celular/computador com login por e-mail e senha, conecte um projeto Supabase:
 
 1. Crie uma conta e um projeto em [supabase.com](https://supabase.com) (grátis).
 2. No projeto, abra **SQL Editor** e rode o conteúdo do arquivo [`supabase/schema.sql`](supabase/schema.sql) deste repositório — isso cria as tabelas e as políticas de segurança (cada usuário só vê os próprios dados).
 3. Em **Project Settings → API**, copie a **Project URL** e a chave **anon public** (ou **publishable**, no dashboard novo).
 4. Abra o arquivo [`config.js`](config.js) e cole os dois valores em `window.SUPABASE_CONFIG`.
-5. Em **Authentication → Emails → Templates**, abra o template **Magic Link** e adicione a variável `{{ .Token }}` no corpo do e-mail (ex: `Seu código de acesso: {{ .Token }}`). **Esse passo é obrigatório** — sem ele, o e-mail só traz um link, e o app pede um código de 6 dígitos, não um link (veja o motivo abaixo).
-6. Recarregue o site. Vai aparecer uma tela de login: digite seu e-mail, clique em "Enviar código", digite os 6 dígitos que chegarem por e-mail e confirme — tudo sem sair da página. Seus dados passam a ficar no Supabase, acessíveis de qualquer dispositivo.
+5. Em **Authentication → Providers → Email**, desative **"Confirm email"**. Como é um app de uso pessoal, isso evita qualquer etapa por e-mail no login — sem isso, criar conta exigiria clicar num link de confirmação, o que abre o Safari normal em vez do atalho salvo na tela de início do iPhone.
+6. Recarregue o site. Na tela de login, digite seu e-mail e uma senha e clique em **"Criar conta (primeiro acesso)"** — só precisa fazer isso uma vez. Nas próximas vezes, use **"Entrar"**.
 
-A chave "anon"/"publishable" é pública por design (protegida pelas políticas de RLS do schema) — não precisa tratá-la como segredo, mas evite comitar a URL do projeto se preferir manter tudo privado.
+Depois de logado, o Supabase mantém a sessão salva no navegador — não pede login de novo a cada abertura, só se você sair (botão "Sair") ou limpar os dados do navegador.
 
-**Por que código em vez de link mágico:** se você usa o site como atalho na tela de início do iPhone, tocar num link recebido por e-mail sempre abre no Safari normal, nunca no atalho — o iOS trata os dois como apps separados. Digitando o código de volta na mesma tela, você nunca sai do app.
+A chave "anon"/"publishable" é pública por design (protegida pelas políticas de RLS do schema) — não precisa tratá-la como segredo, mas evite comitar a URL do projeto se preferir manter tudo privado. **Nunca coloque sua senha em nenhum arquivo do repositório** — ela só deve ser digitada na tela de login.
 
 ## O que tem
 
