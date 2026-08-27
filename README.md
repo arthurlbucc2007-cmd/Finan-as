@@ -14,14 +14,14 @@ Sem configurar nada, o app funciona 100% local. Para sincronizar seus dados entr
 
 1. Crie uma conta e um projeto em [supabase.com](https://supabase.com) (grátis).
 2. No projeto, abra **SQL Editor** e rode o conteúdo do arquivo [`supabase/schema.sql`](supabase/schema.sql) deste repositório — isso cria as tabelas e as políticas de segurança (cada usuário só vê os próprios dados).
-3. Em **Project Settings → API**, copie a **Project URL** e a chave **anon public**.
+3. Em **Project Settings → API**, copie a **Project URL** e a chave **anon public** (ou **publishable**, no dashboard novo).
 4. Abra o arquivo [`config.js`](config.js) e cole os dois valores em `window.SUPABASE_CONFIG`.
-5. Em **Authentication → Providers**, confirme que o login por e-mail (Email OTP / magic link) está habilitado (vem habilitado por padrão).
-6. Recarregue o site. Vai aparecer uma tela de login — digite seu e-mail, clique no link que chegar na caixa de entrada, e pronto: seus dados passam a ficar no Supabase, acessíveis de qualquer dispositivo.
+5. Em **Authentication → Emails → Templates**, abra o template **Magic Link** e adicione a variável `{{ .Token }}` no corpo do e-mail (ex: `Seu código de acesso: {{ .Token }}`). **Esse passo é obrigatório** — sem ele, o e-mail só traz um link, e o app pede um código de 6 dígitos, não um link (veja o motivo abaixo).
+6. Recarregue o site. Vai aparecer uma tela de login: digite seu e-mail, clique em "Enviar código", digite os 6 dígitos que chegarem por e-mail e confirme — tudo sem sair da página. Seus dados passam a ficar no Supabase, acessíveis de qualquer dispositivo.
 
-A chave "anon" é pública por design (protegida pelas políticas de RLS do schema) — não precisa tratá-la como segredo, mas evite comitar a URL do projeto se preferir manter tudo privado.
+A chave "anon"/"publishable" é pública por design (protegida pelas políticas de RLS do schema) — não precisa tratá-la como segredo, mas evite comitar a URL do projeto se preferir manter tudo privado.
 
-> Se você publicar este repositório no GitHub Pages/Vercel/Netlify para acessar o site de qualquer lugar, adicione a URL publicada em **Authentication → URL Configuration → Redirect URLs** no Supabase, senão o link mágico não vai completar o login.
+**Por que código em vez de link mágico:** se você usa o site como atalho na tela de início do iPhone, tocar num link recebido por e-mail sempre abre no Safari normal, nunca no atalho — o iOS trata os dois como apps separados. Digitando o código de volta na mesma tela, você nunca sai do app.
 
 ## O que tem
 

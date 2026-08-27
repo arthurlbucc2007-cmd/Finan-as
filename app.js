@@ -1195,6 +1195,9 @@ function hideApp() {
   document.getElementById('user-email').textContent = '';
 }
 
+// Email + 6-digit code, entered entirely on this screen — no link to tap.
+// (A tapped email link always opens Safari on iOS, never a home-screen web app,
+// so a clickable magic link breaks the "open the shortcut, land in the app" flow.)
 function renderAuthScreen(status) {
   hideApp();
   const c = document.getElementById('content');
@@ -1202,19 +1205,39 @@ function renderAuthScreen(status) {
     <div class="auth-wrap">
       <div class="card auth-card">
         <div class="section-title">Entrar</div>
-        <p class="section-sub">Digite seu e-mail para receber um link de acesso ao Meu Financeiro.</p>
-        <div class="field"><label>E-mail</label><input class="input" id="auth-email" type="email" placeholder="voce@email.com"></div>
-        <button class="btn btn-primary" id="auth-send" style="width:100%">Enviar link mágico</button>
+        <p class="section-sub">Digite seu e-mail para receber um código de 6 dígitos.</p>
+        <div class="field"><label>E-mail</label><input class="input" id="auth-email" type="email" placeholder="voce@email.com" autocomplete="email"></div>
+        <button class="btn btn-primary" id="auth-send" style="width:100%">Enviar código</button>
+        <div id="auth-code-block" style="display:none; margin-top:16px">
+          <div class="field"><label>Código recebido por e-mail</label><input class="input" id="auth-code" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="000000" autocomplete="one-time-code"></div>
+          <button class="btn btn-primary" id="auth-verify" style="width:100%">Confirmar</button>
+        </div>
         <div class="hint" id="auth-status" style="margin-top:10px">${status ? escapeHtml(status) : ''}</div>
       </div>
     </div>`;
+
+  const statusEl = document.getElementById('auth-status');
+  const codeBlock = document.getElementById('auth-code-block');
+
   document.getElementById('auth-send').onclick = async () => {
     const email = document.getElementById('auth-email').value.trim();
-    const statusEl = document.getElementById('auth-status');
     if (!email) { statusEl.textContent = 'Informe um e-mail.'; return; }
     statusEl.textContent = 'Enviando...';
-    const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.href } });
-    statusEl.textContent = error ? ('Erro: ' + error.message) : 'Link enviado! Verifique seu e-mail.';
+    const { error } = await sb.auth.signInWithOtp({ email, options: { shouldCreateUser: true } });
+    if (error) { statusEl.textContent = 'Erro: ' + error.message; return; }
+    statusEl.textContent = 'Código enviado! Confira seu e-mail e digite abaixo.';
+    codeBlock.style.display = '';
+    document.getElementById('auth-code').focus();
+  };
+
+  document.getElementById('auth-verify').onclick = async () => {
+    const email = document.getElementById('auth-email').value.trim();
+    const token = document.getElementById('auth-code').value.trim();
+    if (!token) { statusEl.textContent = 'Digite o código recebido.'; return; }
+    statusEl.textContent = 'Verificando...';
+    const { error } = await sb.auth.verifyOtp({ email, token, type: 'email' });
+    if (error) statusEl.textContent = 'Erro: ' + error.message;
+    // on success, onAuthStateChange fires SIGNED_IN and boots the app — nothing else to do here.
   };
 }
 
