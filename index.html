@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Meu Financeiro</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">💰</span>
+      <span class="brand-name">Meu Financeiro</span>
+    </div>
+    <div class="topbar-actions">
+      <span class="hint" id="user-email"></span>
+      <button class="btn btn-sm" id="btn-logout" style="display:none">Sair</button>
+      <button class="btn btn-primary" id="btn-quick-add">+ Novo lançamento</button>
+      <button class="icon-btn" id="btn-theme" title="Alternar tema" aria-label="Alternar tema">◐</button>
+    </div>
+  </header>
+
+  <nav class="tabs" id="tabs">
+    <button class="tab active" data-tab="dashboard">Dashboard</button>
+    <button class="tab" data-tab="transacoes">Transações</button>
+    <button class="tab" data-tab="orcamentos">Orçamentos</button>
+    <button class="tab" data-tab="assinaturas">Assinaturas</button>
+    <button class="tab" data-tab="metas">Metas</button>
+    <button class="tab" data-tab="cdi">Calculadora CDI</button>
+    <button class="tab" data-tab="config">Configurações</button>
+  </nav>
+
+  <main class="content" id="content">
+    <!-- rendered by app.js -->
+  </main>
+
+</div>
+
+<div class="modal-backdrop" id="modal-backdrop">
+  <div class="modal" id="modal"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
