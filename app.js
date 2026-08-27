@@ -299,6 +299,7 @@ function applyTheme() {
 /* ===================== rendering root ===================== */
 function render() {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === state.tab));
+  positionTabIndicator();
   const c = document.getElementById('content');
   c.innerHTML = '';
   const renderers = {
@@ -312,6 +313,16 @@ function render() {
   };
   (renderers[state.tab] || renderDashboard)(c);
 }
+
+function positionTabIndicator() {
+  const nav = document.getElementById('tabs');
+  const indicator = document.getElementById('tab-indicator');
+  const active = nav && nav.querySelector('.tab.active');
+  if (!nav || !indicator || !active) return;
+  indicator.style.width = active.offsetWidth + 'px';
+  indicator.style.transform = `translateX(${active.offsetLeft - 5}px)`;
+}
+window.addEventListener('resize', () => requestAnimationFrame(positionTabIndicator));
 
 /* ===================== charts ===================== */
 // Single-series ranked bar chart (magnitude comparison) — one hue, direct labels, no legend needed.
@@ -519,7 +530,7 @@ function renderTransacoes(c) {
       </div>
     </div>
     <div class="row">
-      <select class="input" id="f-type" style="max-width:140px">
+      <select class="input" id="f-type" style="max-width:165px">
         <option value="">Todos os tipos</option>
         <option value="expense">Gastos</option>
         <option value="income">Receitas</option>
