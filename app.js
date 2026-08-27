@@ -44,27 +44,59 @@ let cloudMode = false;
 let sb = null;
 let currentUser = null;
 
+// Each setter returns a promise that resolves once the write actually lands
+// (in cloudMode) — callers await it before treating the action as "done" and
+// closing a modal, so a background/close right after "saved" can't cancel an
+// in-flight request and silently lose the write.
 function getTx() { return CACHE.tx; }
-function setTx(v) { const old = CACHE.tx; CACHE.tx = v; onChange('tx', old, v); }
+function setTx(v) { const old = CACHE.tx; CACHE.tx = v; return onChange('tx', old, v); }
 function getCategories() { return CACHE.categories; }
-function setCategories(v) { const old = CACHE.categories; CACHE.categories = v; onChange('categories', old, v); }
+function setCategories(v) { const old = CACHE.categories; CACHE.categories = v; return onChange('categories', old, v); }
 function getPayments() { return CACHE.payments; }
-function setPayments(v) { const old = CACHE.payments; CACHE.payments = v; onChange('payments', old, v); }
+function setPayments(v) { const old = CACHE.payments; CACHE.payments = v; return onChange('payments', old, v); }
 function getBudgets() { return CACHE.budgets; }
-function setBudgets(v) { const old = CACHE.budgets; CACHE.budgets = v; onChange('budgets', old, v); }
+function setBudgets(v) { const old = CACHE.budgets; CACHE.budgets = v; return onChange('budgets', old, v); }
 function getSubs() { return CACHE.subs; }
-function setSubs(v) { const old = CACHE.subs; CACHE.subs = v; onChange('subs', old, v); }
+function setSubs(v) { const old = CACHE.subs; CACHE.subs = v; return onChange('subs', old, v); }
 function getGoals() { return CACHE.goals; }
-function setGoals(v) { const old = CACHE.goals; CACHE.goals = v; onChange('goals', old, v); }
+function setGoals(v) { const old = CACHE.goals; CACHE.goals = v; return onChange('goals', old, v); }
 function getSettings() { return CACHE.settings; }
-function setSettings(v) { const old = CACHE.settings; CACHE.settings = v; onChange('settings', old, v); }
+function setSettings(v) { const old = CACHE.settings; CACHE.settings = v; return onChange('settings', old, v); }
 
 function onChange(key, oldVal, newVal) {
-  if (!cloudMode) { save(LS[key], newVal); return; }
-  syncCloud(key, oldVal, newVal).catch(err => {
+  if (!cloudMode) { save(LS[key], newVal); return Promise.resolve(); }
+  return syncCloud(key, oldVal, newVal).catch(err => {
     console.error('Supabase sync error', key, err);
     toast('Erro ao sincronizar com o Supabase: ' + err.message);
+    throw err;
   });
+}
+
+// For simple (non-modal) mutations: wait for the write, then toast + re-render.
+// onChange() already toasted the specific error on failure, so just re-render either way.
+async function saveAndToast(promise, successMsg) {
+  try {
+    await promise;
+    if (successMsg) toast(successMsg);
+  } catch (e) { /* already toasted by onChange */ }
+  render();
+}
+
+// For modal saves: disable the button while the write is in flight so the
+// modal can't be dismissed mid-save, and only close on confirmed success.
+async function saveViaModal(promise, btn, successMsg) {
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Salvando...';
+  try {
+    await promise;
+    closeModal();
+    toast(successMsg);
+    render();
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
 }
 
 function hydrateFromLocalStorage() {
@@ -644,9 +676,7 @@ function renderTransacoes(c) {
   list.querySelectorAll('[data-edit]').forEach(btn => btn.onclick = () => openTxModal(btn.dataset.edit));
   list.querySelectorAll('[data-del]').forEach(btn => btn.onclick = () => {
     if (!confirm('Excluir este lançamento?')) return;
-    setTx(getTx().filter(t => t.id !== btn.dataset.del));
-    toast('Lançamento excluído.');
-    render();
+    saveAndToast(setTx(getTx().filter(t => t.id !== btn.dataset.del)), 'Lançamento excluído.');
   });
 
   document.getElementById('btn-export-csv').onclick = exportCSV;
@@ -682,7 +712,7 @@ function exportCSV() {
 
 function importCSV(file) {
   const reader = new FileReader();
-  reader.onload = () => {
+  reader.onload = async () => {
     const text = String(reader.result).replace(/^﻿/, '');
     const lines = text.split(/\r?\n/).filter(l => l.trim());
     const cats = getCategories(); const pays = getPayments();
@@ -709,9 +739,7 @@ function importCSV(file) {
       tx.push({ id: uid(), date, amount, category, payment, description: (descricao || '').trim(), type, createdAt: Date.now() });
       added++;
     });
-    setTx(tx); setCategories(cats); setPayments(pays);
-    toast(`${added} lançamento(s) importado(s).`);
-    render();
+    await saveAndToast(Promise.all([setTx(tx), setCategories(cats), setPayments(pays)]), `${added} lançamento(s) importado(s).`);
   };
   reader.readAsText(file, 'utf-8');
 }
@@ -769,7 +797,7 @@ function openTxModal(editId) {
 
   openModal();
   document.getElementById('m-cancel').onclick = closeModal;
-  document.getElementById('m-save').onclick = () => {
+  document.getElementById('m-save').onclick = (e) => {
     const amount = parseNum(document.getElementById('m-amount').value);
     if (!amount || amount <= 0) { toast('Informe um valor válido.'); return; }
     const category = document.getElementById('m-category').value;
@@ -784,10 +812,7 @@ function openTxModal(editId) {
     } else {
       tx.push({ id: uid(), amount, category, payment, description, date, type: curType, createdAt: Date.now() });
     }
-    setTx(tx);
-    closeModal();
-    toast('Lançamento salvo.');
-    render();
+    saveViaModal(setTx(tx), e.target, 'Lançamento salvo.');
   };
 }
 
@@ -835,9 +860,7 @@ function renderOrcamentos(c) {
       const b = getBudgets();
       const v = parseNum(inp.value);
       if (v > 0) b[inp.dataset.budget] = v; else delete b[inp.dataset.budget];
-      setBudgets(b);
-      toast('Orçamento atualizado.');
-      render();
+      saveAndToast(setBudgets(b), 'Orçamento atualizado.');
     };
   });
 }
@@ -885,16 +908,12 @@ function renderAssinaturas(c) {
     const s = subs.find(x => x.id === btn.dataset.launch);
     const tx = getTx();
     tx.push({ id: uid(), amount: s.amount, category: s.category, payment: s.payment, description: s.name, date: todayISO(), type: 'expense', createdAt: Date.now() });
-    setTx(tx);
     s.lastLaunchedMonth = curMonth;
-    setSubs(subs);
-    toast(`"${s.name}" lançado neste mês.`);
-    render();
+    saveAndToast(Promise.all([setTx(tx), setSubs(subs)]), `"${s.name}" lançado neste mês.`);
   });
   list.querySelectorAll('[data-del]').forEach(btn => btn.onclick = () => {
     if (!confirm('Excluir esta assinatura?')) return;
-    setSubs(subs.filter(x => x.id !== btn.dataset.del));
-    render();
+    saveAndToast(setSubs(subs.filter(x => x.id !== btn.dataset.del)));
   });
 
   document.getElementById('btn-add-sub').onclick = () => openSubModal();
@@ -920,7 +939,7 @@ function openSubModal() {
     </div>`;
   openModal();
   document.getElementById('m-cancel').onclick = closeModal;
-  document.getElementById('m-save').onclick = () => {
+  document.getElementById('m-save').onclick = (e) => {
     const name = document.getElementById('s-name').value.trim();
     const amount = parseNum(document.getElementById('s-amount').value);
     if (!name || !amount) { toast('Preencha nome e valor.'); return; }
@@ -932,10 +951,7 @@ function openSubModal() {
       payment: document.getElementById('s-payment').value,
       active: true, lastLaunchedMonth: null,
     });
-    setSubs(subs);
-    closeModal();
-    toast('Assinatura cadastrada.');
-    render();
+    saveViaModal(setSubs(subs), e.target, 'Assinatura cadastrada.');
   };
 }
 
@@ -970,8 +986,7 @@ function renderMetas(c) {
 
   grid.querySelectorAll('[data-del]').forEach(btn => btn.onclick = () => {
     if (!confirm('Excluir esta meta?')) return;
-    setGoals(getGoals().filter(g => g.id !== btn.dataset.del));
-    render();
+    saveAndToast(setGoals(getGoals().filter(g => g.id !== btn.dataset.del)));
   });
   grid.querySelectorAll('[data-add]').forEach(btn => btn.onclick = () => {
     const input = grid.querySelector(`[data-contrib="${btn.dataset.add}"]`);
@@ -980,9 +995,7 @@ function renderMetas(c) {
     const goals = getGoals();
     const g = goals.find(x => x.id === btn.dataset.add);
     g.current += v;
-    setGoals(goals);
-    toast('Contribuição adicionada.');
-    render();
+    saveAndToast(setGoals(goals), 'Contribuição adicionada.');
   });
 
   document.getElementById('btn-add-goal').onclick = () => {
@@ -1000,15 +1013,13 @@ function renderMetas(c) {
       </div>`;
     openModal();
     document.getElementById('m-cancel').onclick = closeModal;
-    document.getElementById('m-save').onclick = () => {
+    document.getElementById('m-save').onclick = (e) => {
       const name = document.getElementById('g-name').value.trim();
       const target = parseNum(document.getElementById('g-target').value);
       if (!name || !target) { toast('Preencha nome e valor alvo.'); return; }
       const goals = getGoals();
       goals.push({ id: uid(), name, target, current: parseNum(document.getElementById('g-current').value) });
-      setGoals(goals);
-      closeModal();
-      render();
+      saveViaModal(setGoals(goals), e.target, 'Meta criada.');
     };
   };
 }
@@ -1188,11 +1199,10 @@ function renderConfig(c) {
   c.querySelectorAll('.remove-dot').forEach(btn => btn.onclick = () => {
     const kind = btn.dataset.kind, idx = +btn.dataset.idx;
     if (kind === 'cat') {
-      const list = getCategories(); list.splice(idx, 1); setCategories(list);
+      const list = getCategories(); list.splice(idx, 1); saveAndToast(setCategories(list));
     } else {
-      const list = getPayments(); list.splice(idx, 1); setPayments(list);
+      const list = getPayments(); list.splice(idx, 1); saveAndToast(setPayments(list));
     }
-    render();
   });
   c.querySelectorAll('.add-dot').forEach(btn => btn.onclick = () => {
     const kind = btn.dataset.add;
@@ -1200,19 +1210,19 @@ function renderConfig(c) {
     const val = input.value.trim();
     if (!val) return;
     if (kind === 'cat') {
-      const list = getCategories(); if (!list.includes(val)) list.push(val); setCategories(list);
+      const list = getCategories(); if (!list.includes(val)) list.push(val); saveAndToast(setCategories(list));
     } else {
-      const list = getPayments(); if (!list.includes(val)) list.push(val); setPayments(list);
+      const list = getPayments(); if (!list.includes(val)) list.push(val); saveAndToast(setPayments(list));
     }
-    render();
   });
 
   document.getElementById('cfg-cdi').onchange = e => {
-    const s = getSettings(); s.cdiRate = parseNum(e.target.value); setSettings(s);
-    toast('Taxa CDI padrão atualizada.');
+    const s = Object.assign({}, getSettings(), { cdiRate: parseNum(e.target.value) });
+    saveAndToast(setSettings(s), 'Taxa CDI padrão atualizada.');
   };
   document.getElementById('cfg-theme').onchange = e => {
-    const s = getSettings(); s.theme = e.target.value; setSettings(s);
+    const s = Object.assign({}, getSettings(), { theme: e.target.value });
+    saveAndToast(setSettings(s));
     applyTheme();
   };
   document.getElementById('cfg-export-backup').onclick = () => {
@@ -1233,20 +1243,21 @@ function renderConfig(c) {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
+      let data;
       try {
-        const data = JSON.parse(String(reader.result));
-        if (data.transactions) setTx(data.transactions);
-        if (data.categories) setCategories(data.categories);
-        if (data.payments) setPayments(data.payments);
-        if (data.budgets) setBudgets(data.budgets);
-        if (data.subscriptions) setSubs(data.subscriptions);
-        if (data.goals) setGoals(data.goals);
-        if (data.settings) setSettings(data.settings);
-        toast('Backup importado com sucesso.');
-        applyTheme();
-        render();
-      } catch (err) { toast('Arquivo de backup inválido.'); }
+        data = JSON.parse(String(reader.result));
+      } catch (err) { toast('Arquivo de backup inválido.'); return; }
+      const writes = [];
+      if (data.transactions) writes.push(setTx(data.transactions));
+      if (data.categories) writes.push(setCategories(data.categories));
+      if (data.payments) writes.push(setPayments(data.payments));
+      if (data.budgets) writes.push(setBudgets(data.budgets));
+      if (data.subscriptions) writes.push(setSubs(data.subscriptions));
+      if (data.goals) writes.push(setGoals(data.goals));
+      if (data.settings) writes.push(setSettings(data.settings));
+      await saveAndToast(Promise.all(writes), 'Backup importado com sucesso.');
+      applyTheme();
     };
     reader.readAsText(file, 'utf-8');
     e.target.value = '';
@@ -1342,7 +1353,7 @@ function wireStaticControls() {
     const s = Object.assign({}, getSettings());
     const order = ['system', 'light', 'dark'];
     s.theme = order[(order.indexOf(s.theme) + 1) % order.length];
-    setSettings(s);
+    setSettings(s).catch(() => {}); // CACHE updates synchronously; onChange() toasts on failure
     applyTheme();
     toast('Tema: ' + (s.theme === 'system' ? 'Automático' : s.theme === 'light' ? 'Claro' : 'Escuro'));
   };
