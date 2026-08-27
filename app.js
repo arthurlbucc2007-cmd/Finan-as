@@ -348,6 +348,75 @@ function barChart(rows, opts) {
   return wrap;
 }
 
+// Fixed 8-slot categorical order (see dataviz palette) — never cycled.
+// Beyond 7 real categories, the rest fold into a neutral "Outros" slice
+// so no two slices ever share a hue.
+const DONUT_SLOTS = ['var(--series-1)', 'var(--series-2)', 'var(--series-3)', 'var(--series-4)', 'var(--series-5)', 'var(--series-6)', 'var(--series-7)'];
+const DONUT_OTHER_COLOR = 'var(--muted)';
+
+// Donut chart showing each category's share of the total — updates live
+// off whatever renderDashboard passes in, so it grows the instant a new
+// expense is added.
+function donutChart(rows, opts) {
+  opts = opts || {};
+  const wrap = document.createElement('div');
+  wrap.className = 'donut-wrap';
+  const total = rows.reduce((a, r) => a + r.value, 0);
+  if (!rows.length || total <= 0) {
+    wrap.innerHTML = '<div class="empty-state">Sem dados neste período.</div>';
+    return wrap;
+  }
+
+  const sorted = rows.slice().sort((a, b) => b.value - a.value);
+  const top = sorted.slice(0, 7);
+  const restTotal = sorted.slice(7).reduce((a, r) => a + r.value, 0);
+  const slices = top.map((r, i) => ({ label: r.label, value: r.value, color: DONUT_SLOTS[i] }));
+  if (restTotal > 0) slices.push({ label: 'Outros', value: restTotal, color: DONUT_OTHER_COLOR });
+
+  const size = 200, strokeWidth = 30, r = (size - strokeWidth) / 2, cx = size / 2, cy = size / 2;
+  const circumference = 2 * Math.PI * r;
+  const gap = 3; // px arc-length spacer between slices
+  let acc = 0;
+  const arcs = slices.map(s => {
+    const frac = s.value / total;
+    const raw = frac * circumference;
+    const dash = Math.max(0, raw - (slices.length > 1 ? gap : 0));
+    const circle = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${s.color}" stroke-width="${strokeWidth}"
+      stroke-dasharray="${dash.toFixed(2)} ${(circumference - dash).toFixed(2)}"
+      stroke-dashoffset="${(-acc).toFixed(2)}"
+      transform="rotate(-90 ${cx} ${cy})" />`;
+    acc += raw;
+    return circle;
+  }).join('');
+
+  const svgBox = document.createElement('div');
+  svgBox.className = 'donut-svg-box';
+  svgBox.innerHTML = `
+    <svg viewBox="0 0 ${size} ${size}" role="img" aria-label="${opts.label || 'Distribuição por categoria'}">${arcs}</svg>
+    <div class="donut-center">
+      <div class="stat-label">Total</div>
+      <div class="stat-value">${fmtMoney(total)}</div>
+    </div>`;
+
+  const legend = document.createElement('div');
+  legend.className = 'donut-legend';
+  slices.forEach(s => {
+    const pct = (s.value / total) * 100;
+    const row = document.createElement('div');
+    row.className = 'donut-legend-row';
+    row.innerHTML = `
+      <span class="donut-dot" style="background:${s.color}"></span>
+      <span class="donut-legend-label" title="${escapeHtml(s.label)}">${escapeHtml(s.label)}</span>
+      <span class="donut-legend-pct">${pct.toFixed(0)}%</span>
+      <span class="donut-legend-value">${fmtMoney(s.value)}</span>`;
+    legend.appendChild(row);
+  });
+
+  wrap.appendChild(svgBox);
+  wrap.appendChild(legend);
+  return wrap;
+}
+
 // Simple SVG line/area chart for CDI projection — single series.
 function lineChart(points, opts) {
   opts = opts || {};
@@ -448,9 +517,9 @@ function renderDashboard(c) {
     <div class="card stat-tile"><div class="stat-label">Saldo do mês</div><div class="stat-value ${balance >= 0 ? 'pos' : 'neg'}">${fmtMoney(balance)}</div></div>`;
   c.appendChild(cards);
 
-  // category chart
+  // category share (donut) — recalculated from live data on every render
   const catRows = Object.entries(byCategory).sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label, value }));
-  c.appendChild(sec('Gastos por categoria', barChart(catRows)));
+  c.appendChild(sec('Gastos por categoria', donutChart(catRows)));
 
   // payment chart
   const payRows = Object.entries(byPayment).sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label, value }));
