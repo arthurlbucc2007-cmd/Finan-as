@@ -48,19 +48,25 @@ let currentUser = null;
 // (in cloudMode) — callers await it before treating the action as "done" and
 // closing a modal, so a background/close right after "saved" can't cancel an
 // in-flight request and silently lose the write.
-function getTx() { return CACHE.tx; }
+// Getters return a defensive copy, never the live CACHE reference. Callers
+// throughout the app do `const x = getTx(); x.push(...); setTx(x)` — if getTx()
+// returned the live array, that push() would mutate CACHE.tx in place *before*
+// setTx() runs, making its "old" snapshot identical to "new" and making the
+// cloud diff (diffArrayById/syncSimpleList/syncBudgets) see no change at all,
+// silently skipping the Supabase write while the UI still shows success.
+function getTx() { return CACHE.tx.slice(); }
 function setTx(v) { const old = CACHE.tx; CACHE.tx = v; return onChange('tx', old, v); }
-function getCategories() { return CACHE.categories; }
+function getCategories() { return CACHE.categories.slice(); }
 function setCategories(v) { const old = CACHE.categories; CACHE.categories = v; return onChange('categories', old, v); }
-function getPayments() { return CACHE.payments; }
+function getPayments() { return CACHE.payments.slice(); }
 function setPayments(v) { const old = CACHE.payments; CACHE.payments = v; return onChange('payments', old, v); }
-function getBudgets() { return CACHE.budgets; }
+function getBudgets() { return Object.assign({}, CACHE.budgets); }
 function setBudgets(v) { const old = CACHE.budgets; CACHE.budgets = v; return onChange('budgets', old, v); }
-function getSubs() { return CACHE.subs; }
+function getSubs() { return CACHE.subs.slice(); }
 function setSubs(v) { const old = CACHE.subs; CACHE.subs = v; return onChange('subs', old, v); }
-function getGoals() { return CACHE.goals; }
+function getGoals() { return CACHE.goals.slice(); }
 function setGoals(v) { const old = CACHE.goals; CACHE.goals = v; return onChange('goals', old, v); }
-function getSettings() { return CACHE.settings; }
+function getSettings() { return Object.assign({}, CACHE.settings); }
 function setSettings(v) { const old = CACHE.settings; CACHE.settings = v; return onChange('settings', old, v); }
 
 function onChange(key, oldVal, newVal) {
@@ -908,8 +914,11 @@ function renderAssinaturas(c) {
     const s = subs.find(x => x.id === btn.dataset.launch);
     const tx = getTx();
     tx.push({ id: uid(), amount: s.amount, category: s.category, payment: s.payment, description: s.name, date: todayISO(), type: 'expense', createdAt: Date.now() });
-    s.lastLaunchedMonth = curMonth;
-    saveAndToast(Promise.all([setTx(tx), setSubs(subs)]), `"${s.name}" lançado neste mês.`);
+    // Replace the object rather than mutating it in place — subs came from
+    // getSubs(), and mutating a shared element would make the cloud sync's
+    // old/new diff see no change (see the getters' comment above).
+    const updatedSubs = subs.map(x => x.id === s.id ? Object.assign({}, x, { lastLaunchedMonth: curMonth }) : x);
+    saveAndToast(Promise.all([setTx(tx), setSubs(updatedSubs)]), `"${s.name}" lançado neste mês.`);
   });
   list.querySelectorAll('[data-del]').forEach(btn => btn.onclick = () => {
     if (!confirm('Excluir esta assinatura?')) return;
@@ -994,8 +1003,8 @@ function renderMetas(c) {
     if (!v) return;
     const goals = getGoals();
     const g = goals.find(x => x.id === btn.dataset.add);
-    g.current += v;
-    saveAndToast(setGoals(goals), 'Contribuição adicionada.');
+    const updatedGoals = goals.map(x => x.id === g.id ? Object.assign({}, x, { current: x.current + v }) : x);
+    saveAndToast(setGoals(updatedGoals), 'Contribuição adicionada.');
   });
 
   document.getElementById('btn-add-goal').onclick = () => {
