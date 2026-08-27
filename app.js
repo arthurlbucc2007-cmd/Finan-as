@@ -1367,19 +1367,26 @@ function init() {
 
   document.getElementById('btn-logout').onclick = () => sb.auth.signOut();
   renderLoading();
+  let hydrated = false;
   sb.auth.onAuthStateChange(async (event, session) => {
     if (session) {
       currentUser = session.user;
+      // A background token refresh (fires periodically while the app is left
+      // open) must not re-fetch and overwrite CACHE — that would clobber any
+      // change made in the seconds between an add and its write finishing.
+      if (hydrated && (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED')) return;
       try {
         await hydrateFromSupabase();
       } catch (e) {
         renderAuthScreen('Erro ao carregar dados: ' + e.message);
         return;
       }
+      hydrated = true;
       showApp();
       applyTheme();
       render();
     } else {
+      hydrated = false;
       currentUser = null;
       CACHE = emptyCache();
       renderAuthScreen();
