@@ -15,6 +15,6 @@
  * como identificadora do seu banco.
  */
 window.SUPABASE_CONFIG = {
-  url: 'https://YOUR-PROJECT.supabase.co',
-  anonKey: 'YOUR-ANON-PUBLIC-KEY',
+  url: 'https://kgvbcpdhizceiktoejtl.supabase.co',
+  anonKey: 'sb_publishable_c-ODyIycXYclUKXMvrdZ3Q_iEkvhc2k',
 };
