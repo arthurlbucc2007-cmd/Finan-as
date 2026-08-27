@@ -1033,11 +1033,74 @@ function renderMetas(c) {
   };
 }
 
+/* ===================== Banco Central (SGS) — CDI / IPCA ===================== */
+// Free, keyless API: https://api.bcb.gov.br/dados/serie/bcdata.sgs.<codigo>/dados
+// 4389 = CDI acumulada no mês, anualizada base 252 (% a.a.)
+// 13522 = IPCA acumulado em 12 meses (%)
+const BCB_SERIES = { cdi: 4389, ipca12m: 13522 };
+let bcb = { cdi: null, cdiDate: null, ipca12m: null, ipcaDate: null, loading: false, error: null, fetchedAt: null };
+
+async function fetchBCBSeries(code) {
+  const url = `https://api.bcb.gov.br/dados/serie/bcdata.sgs.${code}/dados/ultimos/1?formato=json`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const rows = await res.json();
+  if (!rows || !rows[0]) throw new Error('Sem dados');
+  return { value: parseFloat(rows[0].valor), date: rows[0].data };
+}
+
+async function refreshBCB() {
+  bcb.loading = true;
+  bcb.error = null;
+  try {
+    const [cdi, ipca] = await Promise.all([
+      fetchBCBSeries(BCB_SERIES.cdi),
+      fetchBCBSeries(BCB_SERIES.ipca12m),
+    ]);
+    bcb.cdi = cdi.value; bcb.cdiDate = cdi.date;
+    bcb.ipca12m = ipca.value; bcb.ipcaDate = ipca.date;
+    bcb.fetchedAt = Date.now();
+  } catch (e) {
+    bcb.error = e.message;
+  }
+  bcb.loading = false;
+}
+
+// realRate via the Fisher equation — nominal CDI discounted by 12-month inflation.
+function realAnnualRate(nominalPct, inflationPct) {
+  return ((1 + nominalPct / 100) / (1 + inflationPct / 100) - 1) * 100;
+}
+
 /* ===================== CDI CALCULATOR ===================== */
 function renderCDI(c) {
   const settings = getSettings();
+  const cdiDefault = bcb.cdi != null ? bcb.cdi : settings.cdiRate;
 
-  c.innerHTML = `
+  const indicatorsCard = document.createElement('div');
+  indicatorsCard.className = 'section';
+  indicatorsCard.innerHTML = `
+    <div class="row-between" style="margin-bottom:12px">
+      <div class="section-title" style="margin:0">Indicadores (Banco Central)</div>
+      <button class="btn btn-sm" id="bcb-refresh">${bcb.loading ? 'Atualizando...' : '🔄 Atualizar'}</button>
+    </div>
+    <div class="card">
+      ${bcb.cdi != null ? `
+        <div class="grid grid-cards">
+          <div class="stat-tile"><div class="stat-label">CDI anual</div><div class="stat-value">${bcb.cdi.toFixed(2)}%</div></div>
+          <div class="stat-tile"><div class="stat-label">IPCA 12 meses</div><div class="stat-value">${bcb.ipca12m.toFixed(2)}%</div></div>
+          <div class="stat-tile"><div class="stat-label">CDI real (descontada a inflação)</div><div class="stat-value ${realAnnualRate(bcb.cdi, bcb.ipca12m) >= 0 ? 'pos' : 'neg'}">${realAnnualRate(bcb.cdi, bcb.ipca12m).toFixed(2)}%</div></div>
+        </div>
+        <div class="hint" style="margin-top:10px">Fonte: Banco Central (SGS) — CDI de ${bcb.cdiDate}, IPCA 12m de ${bcb.ipcaDate}.</div>
+      ` : `<div class="hint">${bcb.error ? 'Não foi possível buscar do Banco Central agora — usando a taxa padrão definida em Configurações.' : 'Buscando taxas atuais do Banco Central...'}</div>`}
+    </div>`;
+  c.appendChild(indicatorsCard);
+  document.getElementById('bcb-refresh').onclick = async () => {
+    await refreshBCB();
+    render();
+  };
+
+  const rest = document.createElement('div');
+  rest.innerHTML = `
     <div class="section">
       <div class="section-title">Quanto seu saldo está rendendo</div>
       <div class="section-sub">Estimativa de rendimento passivo de um valor investido a % do CDI.</div>
@@ -1045,7 +1108,7 @@ function renderCDI(c) {
         <div class="field-row">
           <div class="field"><label>Saldo atual</label><input class="input" id="p-saldo" type="number" min="0" step="10" value="10000"></div>
           <div class="field"><label>% do CDI</label><input class="input" id="p-pct" type="number" min="0" step="1" value="100"></div>
-          <div class="field"><label>Taxa CDI anual (%)</label><input class="input" id="p-cdi" type="number" min="0" step="0.01" value="${settings.cdiRate}"></div>
+          <div class="field"><label>Taxa CDI anual (%)</label><input class="input" id="p-cdi" type="number" min="0" step="0.01" value="${cdiDefault}"></div>
         </div>
         <div id="p-out" class="grid grid-cards"></div>
       </div>
@@ -1062,13 +1125,14 @@ function renderCDI(c) {
         </div>
         <div class="field-row">
           <div class="field"><label>% do CDI</label><input class="input" id="s-pct" type="number" min="0" step="1" value="100"></div>
-          <div class="field"><label>Taxa CDI anual (%)</label><input class="input" id="s-cdi" type="number" min="0" step="0.01" value="${settings.cdiRate}"></div>
+          <div class="field"><label>Taxa CDI anual (%)</label><input class="input" id="s-cdi" type="number" min="0" step="0.01" value="${cdiDefault}"></div>
           <div class="field"><label>&nbsp;</label><label class="row" style="margin-top:8px"><input type="checkbox" id="s-ir" style="width:auto"> Estimar IR na retirada</label></div>
         </div>
         <div id="s-out" class="grid grid-cards" style="margin-bottom:16px"></div>
         <div id="s-chart"></div>
       </div>
     </div>`;
+  c.appendChild(rest);
 
   const passiveInputs = ['p-saldo', 'p-pct', 'p-cdi'];
   const calcPassive = () => {
@@ -1377,6 +1441,11 @@ function wireStaticControls() {
 function init() {
   setupSupabase();
   wireStaticControls();
+
+  // Fetch the current CDI/IPCA once at startup, in the background — by the time
+  // the user opens the CDI tab it's usually already there, with graceful
+  // fallback to the manual rate in Configurações if the request fails.
+  refreshBCB().then(() => { if (state.tab === 'cdi') render(); });
 
   if (!cloudMode) {
     hydrateFromLocalStorage();
